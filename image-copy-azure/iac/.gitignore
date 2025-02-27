@@ -1,0 +1,4 @@
+*.tfvars
+.terraform/**
+function-*.zip
+function/image-copy-azure
