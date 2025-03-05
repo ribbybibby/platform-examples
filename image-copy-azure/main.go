@@ -60,29 +60,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Construct a verifier that ensures tokens are issued by the Chainguard
-	// issuer we expect and are intended for us.
-	auth := strings.TrimPrefix(r.Header.Get("authorization"), "Bearer ")
-	if auth == "" {
-		httpError(w, fmt.Errorf("unauthorized: missing authorization header"), http.StatusUnauthorized)
-		return
-	}
-	provider, err := oidc.NewProvider(r.Context(), env.Issuer)
-	if err != nil {
-		httpError(w, fmt.Errorf("constructing OIDC provider: %w", err), http.StatusInternalServerError)
-		return
-	}
-	verifier := provider.Verifier(&oidc.Config{ClientID: "customer"})
-	if tok, err := verifier.Verify(r.Context(), auth); err != nil {
-		httpError(w, fmt.Errorf("verifying token: %w", err), http.StatusUnauthorized)
-		return
-	} else if !strings.HasPrefix(tok.Subject, "webhook:") {
-		httpError(w, fmt.Errorf("subject should be from the Chainguard webhook component"), http.StatusUnauthorized)
-		return
-	} else if group := strings.TrimPrefix(tok.Subject, "webhook:"); group != env.Group {
-		httpError(w, fmt.Errorf("token intended for incorrect group: got %s, wanted %s", group, env.Group), http.StatusUnauthorized)
-		return
-	}
+	// Verify the token in the Authorization header
+	verifyAuth(w, r)
 
 	// Check that the event is one we care about:
 	// - It's a registry push event.
@@ -128,6 +107,40 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("Copied %s to %s", src, dst)
+}
+
+func verifyAuth(w http.ResponseWriter, r *http.Request) {
+	// Extract the token from the authorization header
+	auth := strings.TrimPrefix(r.Header.Get("authorization"), "Bearer ")
+	if auth == "" {
+		httpError(w, fmt.Errorf("unauthorized: missing authorization header"), http.StatusUnauthorized)
+		return
+	}
+
+	// Verify that the token was issued by https://issuer.enforce.dev
+	provider, err := oidc.NewProvider(r.Context(), env.Issuer)
+	if err != nil {
+		httpError(w, fmt.Errorf("constructing OIDC provider: %w", err), http.StatusInternalServerError)
+		return
+	}
+	verifier := provider.Verifier(&oidc.Config{ClientID: "customer"})
+	tok, err := verifier.Verify(r.Context(), auth)
+	if err != nil {
+		httpError(w, fmt.Errorf("verifying token: %w", err), http.StatusUnauthorized)
+		return
+	}
+
+	// The subject of the token should be webhook:<org id>. This indicates
+	// that the event was issued by our webhook component, for your
+	// organization.
+	if !strings.HasPrefix(tok.Subject, "webhook:") {
+		httpError(w, fmt.Errorf("subject should be from the Chainguard webhook component"), http.StatusUnauthorized)
+		return
+	}
+	if group := strings.TrimPrefix(tok.Subject, "webhook:"); group != env.Group {
+		httpError(w, fmt.Errorf("token intended for incorrect group: got %s, wanted %s", group, env.Group), http.StatusUnauthorized)
+		return
+	}
 }
 
 func httpError(w http.ResponseWriter, err error, code int) {
