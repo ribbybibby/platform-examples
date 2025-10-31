@@ -42,24 +42,6 @@ resource "azurerm_container_registry" "image_copy" {
   admin_enabled       = false
 }
 
-// TODO: remove this static token once I have permissions to create and test a
-// role binding
-resource "azurerm_container_registry_token" "image_copy" {
-  name                    = "${var.name}-token"
-  container_registry_name = azurerm_container_registry.image_copy.name
-  resource_group_name     = azurerm_resource_group.image_copy.name
-  scope_map_id            = "${azurerm_container_registry.image_copy.id}/scopeMaps/_repositories_push"
-  enabled                 = true
-}
-
-// TODO: remove this static password once I have permissions to create and test
-// a role binding
-resource "azurerm_container_registry_token_password" "image_copy" {
-  container_registry_token_id = azurerm_container_registry_token.image_copy.id
-
-  password1 {}
-}
-
 resource "azurerm_service_plan" "image_copy" {
   name                = var.name
   location            = azurerm_resource_group.image_copy.location
@@ -74,12 +56,11 @@ resource "azurerm_user_assigned_identity" "image_copy" {
   location            = azurerm_resource_group.image_copy.location
 }
 
-// TODO: get permissions to test this
-//resource "azurerm_role_assignment" "image_copy_acr_push" {
-//  scope                = azurerm_container_registry.image_copy.id
-//  role_definition_name = "AcrPush"
-//  principal_id         = azurerm_user_assigned_identity.image_copy.id
-//}
+resource "azurerm_role_assignment" "image_copy_acr_push" {
+  scope                = azurerm_container_registry.image_copy.id
+  role_definition_name = "AcrPush"
+  principal_id         = azurerm_user_assigned_identity.image_copy.id
+}
 
 resource "azurerm_application_insights" "image_copy" {
   name                = var.name
@@ -118,9 +99,5 @@ resource "azurerm_linux_function_app" "image_copy" {
     IDENTITY                 = chainguard_identity.azure.id
     DST_REPO                 = azurerm_container_registry.image_copy.login_server
     AZURE_CLIENT_ID          = azurerm_user_assigned_identity.image_copy.client_id
-    // TODO: remove this user/pass once I have permissions to create a role
-    // binding
-    REGISTRY_USERNAME = azurerm_container_registry_token.image_copy.name
-    REGISTRY_PASSWORD = azurerm_container_registry_token_password.image_copy.password1[0].value
   }
 }

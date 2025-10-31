@@ -30,15 +30,13 @@ import (
 var azureKeychain authn.Keychain = authn.NewKeychainFromHelper(credhelper.NewACRCredentialsHelper())
 
 var env = struct {
-	APIEndpoint      string `envconfig:"API_ENDPOINT" required:"true"`
-	Issuer           string `envconfig:"ISSUER_URL" required:"true"`
-	GroupName        string `envconfig:"GROUP_NAME" required:"true"`
-	Group            string `envconfig:"GROUP" required:"true"`
-	Identity         string `envconfig:"IDENTITY" required:"true"`
-	DstRepo          string `envconfig:"DST_REPO" required:"true"`
-	HandlerPort      string `envconfig:"FUNCTIONS_CUSTOMHANDLER_PORT" default:"8080" required:"true"`
-	RegistryUsername string `envconfig:"REGISTRY_USERNAME" required:"true"`
-	RegistryPassword string `envconfig:"REGISTRY_PASSWORD" required:"true"`
+	APIEndpoint string `envconfig:"API_ENDPOINT" required:"true"`
+	Issuer      string `envconfig:"ISSUER_URL" required:"true"`
+	GroupName   string `envconfig:"GROUP_NAME" required:"true"`
+	Group       string `envconfig:"GROUP" required:"true"`
+	Identity    string `envconfig:"IDENTITY" required:"true"`
+	DstRepo     string `envconfig:"DST_REPO" required:"true"`
+	HandlerPort string `envconfig:"FUNCTIONS_CUSTOMHANDLER_PORT" default:"8080" required:"true"`
 }{}
 
 func init() {
@@ -97,7 +95,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	src := "cgr.dev/" + env.GroupName + "/" + repoName + ":" + body.Tag
 	dst := filepath.Join(env.DstRepo, repoName) + ":" + body.Tag
 	kc := authn.NewMultiKeychain(
-		staticKeychain{},
 		cgKeychain{},
 		azureKeychain,
 	)
@@ -206,20 +203,6 @@ func newToken(ctx context.Context, audience string) (*sts.TokenPair, error) {
 	}
 
 	return &cgTok, nil
-}
-
-// TODO: remove this once I've sorted out access via role bindings
-type staticKeychain struct{}
-
-func (k staticKeychain) Resolve(res authn.Resource) (authn.Authenticator, error) {
-	if res.RegistryStr() != env.DstRepo {
-		return authn.Anonymous, nil
-	}
-
-	return &authn.Basic{
-		Username: env.RegistryUsername,
-		Password: env.RegistryPassword,
-	}, nil
 }
 
 // cgKeychain is an authn.Keychain that provides a Chainguard token capable of
