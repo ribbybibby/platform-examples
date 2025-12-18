@@ -6,6 +6,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
+
+	"chainguard.dev/sdk/auth/token"
+	iam "chainguard.dev/sdk/proto/platform/iam/v1"
+)
+
+var (
+	repoQuery = `{"query":"query OrganizationImageCatalog($organization: ID!) {\n  repos(filter: {uidp: {childrenOf: $organization}}) {\n    name\n    aliases\n  catalogTier\n  activeTags\n  }\n}","variables":{"excludeDates":true,"excludeEpochs":true,"organization":"%s"}}`
+	audience  = "https://console-api.enforce.dev"
 )
 
 // Repo describes a repo in the catalog
@@ -16,16 +25,40 @@ type Repo struct {
 	ActiveTags  []string `json:"activeTags"`
 }
 
-func listRepos(ctx context.Context) ([]Repo, error) {
+func listRepos(ctx context.Context, orgName string) ([]Repo, error) {
+	var (
+		orgId = "ce2d1984a010471142503340d670612d63ffb9f6"
+		tok   string
+		err   error
+	)
+
+	// We default to listing repos in the public catalog, which requires no
+	// auth. If orgName is set to something else, then we expect that
+	// `chainctl auth login` has been ran and we can reuse that token. We
+	// also use the token to resolve the org id from the name.
+	if orgName != "chainguard" {
+		tok, err = getToken()
+		if err != nil {
+			return nil, fmt.Errorf("fetching token: %w", err)
+		}
+		orgId, err = resolveOrgId(ctx, tok, orgName)
+		if err != nil {
+			return nil, fmt.Errorf("resolving org id: %w", err)
+		}
+	}
+
 	c := &http.Client{}
 
-	buf := bytes.NewReader([]byte(`{"query":"query OrganizationImageCatalog($organization: ID!) {\n  repos(filter: {uidp: {childrenOf: $organization}}) {\n    name\n    aliases\n  catalogTier\n  activeTags\n  }\n}","variables":{"excludeDates":true,"excludeEpochs":true,"organization":"ce2d1984a010471142503340d670612d63ffb9f6"}}`))
+	buf := bytes.NewReader([]byte(fmt.Sprintf(repoQuery, orgId)))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://data.chainguard.dev/query?id=PrivateImageCatalog", buf)
 	if err != nil {
 		return nil, fmt.Errorf("constructing request: %w", err)
 	}
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("User-Agent", "image-mapper")
+	if tok != "" {
+		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", tok))
+	}
 
 	resp, err := c.Do(req)
 	if err != nil {
@@ -47,6 +80,41 @@ func listRepos(ctx context.Context) ([]Repo, error) {
 	}
 
 	return fixAliases(data.Data.Repos), nil
+}
+
+// getToken retrieves the token saved to disk by `chainctl auth login`
+func getToken() (string, error) {
+	if token.RemainingLife(token.KindAccess, audience, time.Minute) <= 0 {
+		return "", fmt.Errorf("token has expired, please run `chainctl auth login`")
+	}
+	tokb, err := token.Load(token.KindAccess, audience)
+	if err != nil {
+		return "", fmt.Errorf("loading token: %w", err)
+	}
+
+	return string(tokb), nil
+}
+
+// resolveOrgId gets the UIDP for an organization name
+func resolveOrgId(ctx context.Context, tok, orgName string) (string, error) {
+	iamc, err := iam.NewClients(ctx, audience, tok)
+	if err != nil {
+		return "", fmt.Errorf("creating IAM clients: %w", err)
+	}
+	resp, err := iamc.Groups().List(ctx, &iam.GroupFilter{
+		Name: orgName,
+	})
+	if err != nil {
+		return "", fmt.Errorf("listing groups: %w", err)
+	}
+	for _, item := range resp.Items {
+		if item == nil {
+			continue
+		}
+		return item.Id, nil
+	}
+
+	return "", fmt.Errorf("couldn't find id in list response: %w", err)
 }
 
 // fixAliases corrects some notoriously incorrect aliases in the repository

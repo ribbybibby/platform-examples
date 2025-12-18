@@ -24,12 +24,14 @@ type Mapper struct {
 
 // NewMapper creates a new mapper
 func NewMapper(ctx context.Context, opts ...Option) (*Mapper, error) {
-	o := &options{}
+	o := &options{
+		orgName: "chainguard",
+	}
 	for _, opt := range opts {
 		opt(o)
 	}
 
-	repos, err := listRepos(ctx)
+	repos, err := listRepos(ctx, o.orgName)
 	if err != nil {
 		return nil, fmt.Errorf("listing repos: %w", err)
 	}
@@ -37,7 +39,7 @@ func NewMapper(ctx context.Context, opts ...Option) (*Mapper, error) {
 	m := &Mapper{
 		repos:     repos,
 		ignoreFns: o.ignoreFns,
-		repoName:  "cgr.dev/chainguard",
+		repoName:  fmt.Sprintf("cgr.dev/%s", o.orgName),
 	}
 
 	return m, nil

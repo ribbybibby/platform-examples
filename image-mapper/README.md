@@ -62,6 +62,22 @@ ghcr.io/stakater/reloader:v1.4.1,[cgr.dev/chainguard/stakater-reloader-fips:v1.4
 registry.k8s.io/sig-storage/livenessprobe:v2.13.1,[cgr.dev/chainguard/kubernetes-csi-livenessprobe:v2.17.0]
 ```
 
+### Organization Name
+
+By default, the mapper will query all the images in the catalog. If you're
+only interested in mapping to images that are present in your organization,
+provide the `--org-name` flag.
+
+```
+$ chainctl auth login
+
+$ ./image-mapper prom/prometheus --org-name=your.org
+prom/prometheus -> cgr.dev/your.org/prometheus:latest
+```
+
+As you can see from the example, this requires you to log in with `chainctl
+auth login` first.
+
 ### Ignore Tiers (i.e FIPS)
 
 The output will map both FIPS and non-FIPS variants. You can exclude FIPS with
