@@ -14,13 +14,68 @@ type Repo struct {
 	CatalogTier string   `json:"catalogTier"`
 	Aliases     []string `json:"aliases"`
 	ActiveTags  []string `json:"activeTags"`
+	Tags        []Tag    `json:"tags"`
 }
 
-func listRepos(ctx context.Context) ([]Repo, error) {
+// Tag is a tag in a repository
+type Tag struct {
+	Name string `json:"name"`
+}
+
+func flattenTags(tags []Tag) []string {
+	var flattened []string
+	for _, tag := range tags {
+		flattened = append(flattened, tag.Name)
+	}
+
+	return flattened
+}
+
+var (
+	repoQuery = `
+query ChainguardPrivateImageCatalog {
+  repos(filter: {uidp: {childrenOf: "ce2d1984a010471142503340d670612d63ffb9f6"}}) {
+    name
+    aliases
+    catalogTier
+    activeTags
+  }
+}
+`
+
+	repoQueryWithTags = `
+query ChainguardPrivateImageCatalog {
+  repos(filter: {uidp: {childrenOf: "ce2d1984a010471142503340d670612d63ffb9f6"}}) {
+    name
+    aliases
+    catalogTier
+    activeTags
+    tags(filter: {excludeDates: true, excludeEpochs: true, excludeReferrers: true}) {
+      name
+    }
+  }
+}
+`
+)
+
+func listRepos(ctx context.Context, inactiveTags bool) ([]Repo, error) {
 	c := &http.Client{}
 
-	buf := bytes.NewReader([]byte(`{"query":"query OrganizationImageCatalog($organization: ID!) {\n  repos(filter: {uidp: {childrenOf: $organization}}) {\n    name\n    aliases\n  catalogTier\n  activeTags\n  }\n}","variables":{"excludeDates":true,"excludeEpochs":true,"organization":"ce2d1984a010471142503340d670612d63ffb9f6"}}`))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://data.chainguard.dev/query?id=PrivateImageCatalog", buf)
+	body := struct {
+		Query string `json:"query"`
+	}{
+		Query: repoQuery,
+	}
+	if inactiveTags {
+		body.Query = repoQueryWithTags
+	}
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(body); err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://data.chainguard.dev/query", &buf)
 	if err != nil {
 		return nil, fmt.Errorf("constructing request: %w", err)
 	}
@@ -70,6 +125,8 @@ func fixAliases(repos []Repo) []Repo {
 }
 
 var aliasesFixes = map[string][]string{
+	"argocd-repo-server":      {},
+	"argocd-repo-server-fips": {},
 	"argo-cli": {
 		"quay.io/argoproj/argocli",
 	},
@@ -133,6 +190,12 @@ var aliasesFixes = map[string][]string{
 	"crossplane-aws-eks-fips": {
 		"ghcr.io/crossplane-contrib/provider-aws-eks",
 	},
+	"crossplane-aws-elasticache": {
+		"ghcr.io/crossplane-contrib/provider-aws-elasticache",
+	},
+	"crossplane-aws-elasticache-fips": {
+		"ghcr.io/crossplane-contrib/provider-aws-elasticache",
+	},
 	"crossplane-aws-fips": {
 		"ghcr.io/crossplane-contrib/provider-family-aws",
 	},
@@ -165,6 +228,12 @@ var aliasesFixes = map[string][]string{
 	},
 	"crossplane-aws-lambda-fips": {
 		"ghcr.io/crossplane-contrib/provider-aws-lambda",
+	},
+	"crossplane-aws-memorydb": {
+		"ghcr.io/crossplane-contrib/provider-aws-memorydb",
+	},
+	"crossplane-aws-memorydb-fips": {
+		"ghcr.io/crossplane-contrib/provider-aws-memorydb",
 	},
 	"crossplane-aws-rds": {
 		"ghcr.io/crossplane-contrib/provider-aws-rds",
@@ -279,6 +348,42 @@ var aliasesFixes = map[string][]string{
 	},
 	"flux-source-controller-fips": {
 		"ghcr.io/fluxcd/source-controller",
+	},
+	"kyverno-cli": {
+		"ghcr.io/kyverno/kyverno-cli",
+	},
+	"kyverno-cli-fips": {
+		"ghcr.io/kyverno/kyverno-cli-fips",
+	},
+	"kyverno": {
+		"ghcr.io/kyverno/kyverno",
+	},
+	"kyverno-fips": {
+		"ghcr.io/kyverno/kyverno",
+	},
+	"kyvernopre": {
+		"ghcr.io/kyverno/kyvernopre",
+	},
+	"kyvernopre-fips": {
+		"ghcr.io/kyverno/kyvernopre",
+	},
+	"kyverno-background-controller": {
+		"ghcr.io/kyverno/background-controller",
+	},
+	"kyverno-background-controller-fips": {
+		"ghcr.io/kyverno/background-controller",
+	},
+	"kyverno-cleanup-controller": {
+		"ghcr.io/kyverno/cleanup-controller",
+	},
+	"kyverno-cleanup-controller-fips": {
+		"ghcr.io/kyverno/cleanup-controller",
+	},
+	"kyverno-reports-controller": {
+		"ghcr.io/kyverno/reports-controller",
+	},
+	"kyverno-reports-controller-fips": {
+		"ghcr.io/kyverno/reports-controller",
 	},
 	"minio-client": {
 		"quay.io/minio/mc",
