@@ -91,7 +91,7 @@ func TestMapperMap(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			m := &Mapper{
+			m := &mapper{
 				repos:     tc.repos,
 				repoName:  "cgr.dev/chainguard",
 				ignoreFns: []IgnoreFn{IgnoreTiers([]string{"fips"})},
@@ -115,7 +115,7 @@ func TestMapperMap(t *testing.T) {
 }
 
 func TestMapperMapInvalidImage(t *testing.T) {
-	m := &Mapper{
+	m := &mapper{
 		repos: []Repo{},
 	}
 
@@ -139,7 +139,7 @@ func TestMapperMapAll(t *testing.T) {
 		},
 	}
 
-	m := &Mapper{
+	m := &mapper{
 		repos:    repos,
 		repoName: "cgr.dev/chainguard",
 	}
@@ -186,7 +186,7 @@ func TestMapperMapAllDuplicates(t *testing.T) {
 		},
 	}
 
-	m := &Mapper{
+	m := &mapper{
 		repos:    repos,
 		repoName: "cgr.dev/chainguard",
 	}
@@ -227,7 +227,7 @@ func TestMapperMapAllDuplicates(t *testing.T) {
 }
 
 func TestMapperMapAllIteratorError(t *testing.T) {
-	m := &Mapper{
+	m := &mapper{
 		repos: []Repo{},
 	}
 	expectedErr := errors.New("iterator error")
@@ -240,7 +240,7 @@ func TestMapperMapAllIteratorError(t *testing.T) {
 }
 
 func TestMapperMapAllMapError(t *testing.T) {
-	m := &Mapper{
+	m := &mapper{
 		repos: []Repo{},
 	}
 
@@ -494,7 +494,7 @@ func TestMapperMapWithCustomIgnoreFn(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			m := &Mapper{
+			m := &mapper{
 				repos:     tc.repos,
 				repoName:  "cgr.dev/chainguard",
 				ignoreFns: tc.ignoreFns,
@@ -545,7 +545,7 @@ func TestMapperMapWithCustomIgnoreFnUsingAliases(t *testing.T) {
 		return false
 	}
 
-	m := &Mapper{
+	m := &mapper{
 		repos:     repos,
 		repoName:  "cgr.dev/chainguard",
 		ignoreFns: []IgnoreFn{ignoreFn},
@@ -601,7 +601,7 @@ func TestMapperMapWithNoIgnoreFns(t *testing.T) {
 		},
 	}
 
-	m := &Mapper{
+	m := &mapper{
 		repos:     repos,
 		repoName:  "cgr.dev/chainguard",
 		ignoreFns: []IgnoreFn{}, // No ignore functions

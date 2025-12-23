@@ -4,6 +4,8 @@ A tool for matching non-Chainguard images to their Chainguard equivalents.
 
 ## Usage
 
+### Basic
+
 Build the tool.
 
 ```
@@ -29,6 +31,30 @@ argument is `-`.
 ```
 $ cat ./images.txt | ./image-mapper -
 ```
+
+### Helm Values
+
+Use the `helm-values` subcommand to streamline the process of mapping images in
+Helm charts to Chainguard.
+
+```
+$ helm show values argocd/argo-cd | ./image-mapper helm-values -
+dex:
+    image:
+        repository: cgr.dev/chainguard/dex
+global:
+    image:
+        repository: cgr.dev/chainguard/argocd
+redis:
+    exporter:
+        image:
+            repository: cgr.dev/chainguard/prometheus-redis-exporter
+...
+```
+
+This provides values overrides that you can pass to `helm install`.
+
+Refer to [this page](./docs/helm_values.md) for more details.
 
 ## Options
 

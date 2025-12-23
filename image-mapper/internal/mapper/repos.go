@@ -70,6 +70,8 @@ func fixAliases(repos []Repo) []Repo {
 }
 
 var aliasesFixes = map[string][]string{
+	"argocd-repo-server":      {},
+	"argocd-repo-server-fips": {},
 	"argo-cli": {
 		"quay.io/argoproj/argocli",
 	},
@@ -279,6 +281,42 @@ var aliasesFixes = map[string][]string{
 	},
 	"flux-source-controller-fips": {
 		"ghcr.io/fluxcd/source-controller",
+	},
+	"kyverno-cli": {
+		"ghcr.io/kyverno/kyverno-cli",
+	},
+	"kyverno-cli-fips": {
+		"ghcr.io/kyverno/kyverno-cli-fips",
+	},
+	"kyverno": {
+		"ghcr.io/kyverno/kyverno",
+	},
+	"kyverno-fips": {
+		"ghcr.io/kyverno/kyverno",
+	},
+	"kyvernopre": {
+		"ghcr.io/kyverno/kyvernopre",
+	},
+	"kyvernopre-fips": {
+		"ghcr.io/kyverno/kyvernopre",
+	},
+	"kyverno-background-controller": {
+		"ghcr.io/kyverno/background-controller",
+	},
+	"kyverno-background-controller-fips": {
+		"ghcr.io/kyverno/background-controller",
+	},
+	"kyverno-cleanup-controller": {
+		"ghcr.io/kyverno/cleanup-controller",
+	},
+	"kyverno-cleanup-controller-fips": {
+		"ghcr.io/kyverno/cleanup-controller",
+	},
+	"kyverno-reports-controller": {
+		"ghcr.io/kyverno/reports-controller",
+	},
+	"kyverno-reports-controller-fips": {
+		"ghcr.io/kyverno/reports-controller",
 	},
 	"minio-client": {
 		"quay.io/minio/mc",

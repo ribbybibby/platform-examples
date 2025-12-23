@@ -13,6 +13,7 @@ var (
 	outputFormat     string
 	ignoreTiers      []string
 	ignoreIamguarded bool
+	repo             string
 )
 
 var rootCmd = &cobra.Command{
@@ -34,7 +35,7 @@ var rootCmd = &cobra.Command{
 		if ignoreIamguarded {
 			ignoreFns = append(ignoreFns, mapper.IgnoreIamguarded())
 		}
-		m, err := mapper.NewMapper(ctx, mapper.WithIgnoreFns(ignoreFns...))
+		m, err := mapper.NewMapper(ctx, mapper.WithRepository(repo), mapper.WithIgnoreFns(ignoreFns...))
 		if err != nil {
 			return fmt.Errorf("creating mapper: %w", err)
 		}
@@ -57,6 +58,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format (csv, json, text, customer-yaml)")
 	rootCmd.Flags().StringSliceVar(&ignoreTiers, "ignore-tiers", []string{}, "Ignore Chainguard repos of specific tiers (PREMIUM, APPLICATION, BASE, FIPS, AI)")
 	rootCmd.Flags().BoolVar(&ignoreIamguarded, "ignore-iamguarded", false, "Ignore iamguarded images")
+	rootCmd.Flags().StringVar(&repo, "repository", "cgr.dev/chainguard", "Modifies the repository URI in the mappings. For instance, registry.internal.dev/chainguard would result in registry.internal.dev/chainguard/<image> in the output.")
 }
 
 func Execute() error {
