@@ -56,6 +56,16 @@ This provides values overrides that you can pass to `helm install`.
 
 Refer to [this page](./docs/helm_values.md) for more details.
 
+### Dockerfiles
+
+Use the `dockerfile` subcommand to map the images in a Dockerfile to Chainguard.
+
+```
+$ cat Dockerfile | ./image-mapper dockerfile -
+FROM cgr.dev/chainguard/python:3.13-dev
+...
+```
+
 ## Options
 
 ### Output
