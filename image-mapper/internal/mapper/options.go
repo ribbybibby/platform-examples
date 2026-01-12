@@ -1,13 +1,17 @@
 package mapper
 
+import "time"
+
 // Option configures a Mapper
 type Option func(*options)
 
 type options struct {
-	ignoreFns    []IgnoreFn
-	repo         string
-	inactiveTags bool
-	tagFilters   []TagFilter
+	ignoreFns     []IgnoreFn
+	repo          string
+	inactiveTags  bool
+	tagFilters    []TagFilter
+	useCache      bool
+	cacheDuration time.Duration
 }
 
 // WithIgnoreFns is a functional option that configures the IgnoreFns used by
@@ -39,5 +43,21 @@ func WithTagFilters(tagFilters ...TagFilter) Option {
 func WithInactiveTags(inactiveTags bool) Option {
 	return func(o *options) {
 		o.inactiveTags = inactiveTags
+	}
+}
+
+// WithCache is a functional option that configures the mapper to cache
+// repositories to a file on disk for reuse
+func WithCache(useCache bool) Option {
+	return func(o *options) {
+		o.useCache = useCache
+	}
+}
+
+// WithCacheDuration is a functional option that configures how long the mapper
+// will cache repositories for before fetching them from the catalog
+func WithCacheDuration(cacheDuration time.Duration) Option {
+	return func(o *options) {
+		o.cacheDuration = cacheDuration
 	}
 }

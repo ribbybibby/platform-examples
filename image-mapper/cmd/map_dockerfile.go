@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/chainguard-dev/customer-success/scripts/image-mapper/internal/dockerfile"
 	"github.com/chainguard-dev/customer-success/scripts/image-mapper/internal/mapper"
@@ -12,7 +13,9 @@ import (
 
 func MapDockerfileCommand() *cobra.Command {
 	opts := struct {
-		Repo string
+		Repo          string
+		Cache         bool
+		CacheDuration time.Duration
 	}{}
 	cmd := &cobra.Command{
 		Use:   "dockerfile",
@@ -46,7 +49,13 @@ image-mapper map dockerfile Dockerfile --repository=registry.internal/cgr
 				}
 			}
 
-			output, err := dockerfile.Map(cmd.Context(), input, mapper.WithRepository(opts.Repo))
+			output, err := dockerfile.Map(
+				cmd.Context(),
+				input,
+				mapper.WithRepository(opts.Repo),
+				mapper.WithCache(opts.Cache),
+				mapper.WithCacheDuration(opts.CacheDuration),
+			)
 			if err != nil {
 				return fmt.Errorf("mapping dockerfile: %w", err)
 			}
@@ -60,6 +69,8 @@ image-mapper map dockerfile Dockerfile --repository=registry.internal/cgr
 	}
 
 	cmd.Flags().StringVar(&opts.Repo, "repository", "cgr.dev/chainguard", "Modifies the repository URI in the mappings. For instance, registry.internal.dev/chainguard would result in registry.internal.dev/chainguard/<image> in the output.")
+	cmd.Flags().BoolVar(&opts.Cache, "cache", true, "Cache repository data to disk for use in subsequent invocations.")
+	cmd.Flags().DurationVar(&opts.CacheDuration, "cache-duration", 1*time.Hour, "Amount of time to cache data before fetching from the catalog again.")
 
 	return cmd
 }

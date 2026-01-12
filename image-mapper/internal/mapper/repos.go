@@ -4,11 +4,23 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
 )
+
+// RepoList describes a list of repos in the catalog
+type RepoList struct {
+	Repos     []Repo    `json:"repos"`
+	FetchedAt time.Time `json:"fetchedAt"`
+}
 
 // Repo describes a repo in the catalog
 type Repo struct {
@@ -24,42 +36,30 @@ type Tag struct {
 	Name string `json:"name"`
 }
 
-func flattenTags(tags []Tag) []string {
-	var flattened []string
-	for _, tag := range tags {
-		flattened = append(flattened, tag.Name)
-	}
-
-	return flattened
+// RepoClient lists repos in the catalog
+type RepoClient interface {
+	ListRepos(ctx context.Context) (*RepoList, error)
 }
 
-// parseRepo parses a 'repository' as expressed as a registry hostname
-// (foo.bar.com) or a repository name (foo.bar.com/foo/bar).
-func parseRepo(repo string) (string, error) {
-	if ref, err := name.NewRegistry(repo); err == nil {
-		return ref.String(), nil
-	}
-
-	if ref, err := name.NewRepository(repo); err == nil {
-		return ref.String(), nil
-	}
-
-	return "", fmt.Errorf("can't parse repository: %s", repo)
+type repoClient struct {
+	url string
 }
 
-var (
-	repoQuery = `
-query ChainguardPrivateImageCatalog {
-  repos(filter: {uidp: {childrenOf: "ce2d1984a010471142503340d670612d63ffb9f6"}}) {
-    name
-    aliases
-    catalogTier
-    activeTags
-  }
+// NewRepoClient returns a repo client that lists repositories from the
+// Chainguard catalog
+func NewRepoClient(url string) RepoClient {
+	return &repoClient{url: url}
 }
-`
 
-	repoQueryWithTags = `
+// ListRepos lists repositories via a GraphQL query
+func (rc *repoClient) ListRepos(ctx context.Context) (*RepoList, error) {
+	log.Printf("Fetching list of repositories from Chainguard catalog...")
+	c := &http.Client{}
+
+	body := struct {
+		Query string `json:"query"`
+	}{
+		Query: `
 query ChainguardPrivateImageCatalog {
   repos(filter: {uidp: {childrenOf: "ce2d1984a010471142503340d670612d63ffb9f6"}}) {
     name
@@ -71,19 +71,7 @@ query ChainguardPrivateImageCatalog {
     }
   }
 }
-`
-)
-
-func listRepos(ctx context.Context, inactiveTags bool) ([]Repo, error) {
-	c := &http.Client{}
-
-	body := struct {
-		Query string `json:"query"`
-	}{
-		Query: repoQuery,
-	}
-	if inactiveTags {
-		body.Query = repoQueryWithTags
+`,
 	}
 
 	var buf bytes.Buffer
@@ -91,7 +79,7 @@ func listRepos(ctx context.Context, inactiveTags bool) ([]Repo, error) {
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://data.chainguard.dev/query", &buf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rc.url, &buf)
 	if err != nil {
 		return nil, fmt.Errorf("constructing request: %w", err)
 	}
@@ -117,7 +105,151 @@ func listRepos(ctx context.Context, inactiveTags bool) ([]Repo, error) {
 		return nil, fmt.Errorf("unmarshaling body: %w", err)
 	}
 
-	return fixAliases(data.Data.Repos), nil
+	return &RepoList{
+		Repos:     fixAliases(data.Data.Repos),
+		FetchedAt: time.Now(),
+	}, nil
+}
+
+type cachingRepoClient struct {
+	repoList      *RepoList
+	repoClient    RepoClient
+	cacheDuration time.Duration
+	lock          sync.RWMutex
+}
+
+// NewCachingRepoClient returns a repo client that wraps the provided repo
+// client, caching the results for the indicated amount of time
+func NewCachingRepoClient(cacheDuration time.Duration, repoClient RepoClient) RepoClient {
+	return &cachingRepoClient{
+		repoClient:    repoClient,
+		cacheDuration: cacheDuration,
+		lock:          sync.RWMutex{},
+	}
+}
+
+// ListRepos lists repos from an in memory cache until the cache duration is
+// exceeded, at which point it'll list repos using the wrapped client
+func (rc *cachingRepoClient) ListRepos(ctx context.Context) (*RepoList, error) {
+	rc.lock.Lock()
+	defer rc.lock.Unlock()
+
+	if rc.repoList != nil && time.Since(rc.repoList.FetchedAt) < rc.cacheDuration {
+		return rc.repoList, nil
+	}
+
+	repoList, err := rc.repoClient.ListRepos(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	rc.repoList = repoList
+
+	return repoList, nil
+}
+
+type fileCachingRepoClient struct {
+	repoClient    RepoClient
+	cacheDuration time.Duration
+	cacheDir      string
+}
+
+// NewFileCachingRepoClient constructs a repo client that caches repos to a
+// location on disk for the amount of time indicated by cache duration before
+// fetching them again with the wrapped client
+func NewFileCachingRepoClient(cacheDuration time.Duration, repoClient RepoClient) (RepoClient, error) {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return nil, fmt.Errorf("finding cache dir: %w", err)
+	}
+
+	return &fileCachingRepoClient{
+		repoClient:    repoClient,
+		cacheDuration: cacheDuration,
+		cacheDir:      filepath.Join(cacheDir, "chainguard-image-mapper"),
+	}, nil
+}
+
+// ListRepos will list repos from a file on disk until the cache duration
+// exceeded, at which point it will list repos from the wrapped client
+func (rc *fileCachingRepoClient) ListRepos(ctx context.Context) (*RepoList, error) {
+	cachedList, err := rc.getRepoList(ctx)
+	if err != nil && !errors.Is(err, errNotFoundInCache) {
+		return nil, err
+	}
+	if cachedList != nil && time.Since(cachedList.FetchedAt) < rc.cacheDuration {
+		return cachedList, nil
+	}
+
+	repoList, err := rc.repoClient.ListRepos(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := rc.putRepoList(ctx, repoList); err != nil {
+		return nil, err
+	}
+
+	return repoList, nil
+}
+
+var errNotFoundInCache = errors.New("not found in cache")
+
+func (rc *fileCachingRepoClient) getRepoList(ctx context.Context) (*RepoList, error) {
+	cacheData, err := os.ReadFile(filepath.Join(rc.cacheDir, "repos.json"))
+	if os.IsNotExist(err) {
+		return nil, errNotFoundInCache
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading file: %w", err)
+	}
+
+	var repoList RepoList
+	if err := json.Unmarshal(cacheData, &repoList); err != nil {
+		return nil, fmt.Errorf("unmarshaling data: %w", err)
+	}
+
+	return &repoList, nil
+}
+
+func (rc *fileCachingRepoClient) putRepoList(ctx context.Context, repoList *RepoList) error {
+	if err := os.MkdirAll(rc.cacheDir, 0755); err != nil {
+		return fmt.Errorf("creating cache directory: %w", err)
+	}
+
+	data, err := json.Marshal(repoList)
+	if err != nil {
+		return fmt.Errorf("marshaling repo list: %w", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(rc.cacheDir, "repos.json"), data, 0644); err != nil {
+		return fmt.Errorf("writing cache file: %w", err)
+	}
+
+	return nil
+}
+
+func flattenTags(tags []Tag) []string {
+	var flattened []string
+	for _, tag := range tags {
+		flattened = append(flattened, tag.Name)
+	}
+
+	return flattened
+}
+
+// parseRepo parses a 'repository' as expressed as a registry hostname
+// (foo.bar.com) or a repository name (foo.bar.com/foo/bar).
+func parseRepo(repo string) (string, error) {
+	if ref, err := name.NewRegistry(repo); err == nil {
+		return ref.String(), nil
+	}
+
+	if ref, err := name.NewRepository(repo); err == nil {
+		return ref.String(), nil
+	}
+
+	return "", fmt.Errorf("can't parse repository: %s", repo)
 }
 
 // fixAliases corrects some notoriously incorrect aliases in the repository

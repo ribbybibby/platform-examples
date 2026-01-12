@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
 )
@@ -21,7 +22,7 @@ type Mapper interface {
 }
 
 type mapper struct {
-	repos      []Repo
+	repoClient RepoClient
 	ignoreFns  []IgnoreFn
 	tagFilters []TagFilter
 	repoName   string
@@ -30,7 +31,9 @@ type mapper struct {
 // NewMapper creates a new mapper
 func NewMapper(ctx context.Context, opts ...Option) (*mapper, error) {
 	o := &options{
-		repo: "cgr.dev/chainguard",
+		repo:          "cgr.dev/chainguard",
+		cacheDuration: 1 * time.Hour,
+		useCache:      true,
 	}
 	for _, opt := range opts {
 		opt(o)
@@ -41,13 +44,16 @@ func NewMapper(ctx context.Context, opts ...Option) (*mapper, error) {
 		return nil, fmt.Errorf("parsing repository: %w", err)
 	}
 
-	repos, err := listRepos(ctx, o.inactiveTags)
-	if err != nil {
-		return nil, fmt.Errorf("listing repos: %w", err)
+	rc := NewRepoClient("https://data.chainguard.dev/query")
+	if o.useCache {
+		rc, err = NewFileCachingRepoClient(o.cacheDuration, rc)
+		if err != nil {
+			return nil, fmt.Errorf("creating repo client: %w", err)
+		}
 	}
 
 	m := &mapper{
-		repos:      repos,
+		repoClient: NewCachingRepoClient(o.cacheDuration, rc),
 		ignoreFns:  o.ignoreFns,
 		tagFilters: o.tagFilters,
 		repoName:   repoName,
@@ -92,10 +98,17 @@ func (m *mapper) Map(image string) (*Mapping, error) {
 		return nil, fmt.Errorf("parsing %s: %w", image, err)
 	}
 
+	// TODO; pass ctx in as an argument to Map
+	repoList, err := m.repoClient.ListRepos(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("listing repos: %w", err)
+	}
+
 	// Identify repositories in the Chainguard catalog that match the
 	// provided image
 	matches := map[string]Repo{}
-	for _, cgrrepo := range m.repos {
+
+	for _, cgrrepo := range repoList.Repos {
 		// There are some images that may appear in the results but are
 		// not accessible in the catalog. We can exclude them by
 		// ignoring repos without a catalog tier.

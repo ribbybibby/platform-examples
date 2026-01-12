@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/chainguard-dev/customer-success/scripts/image-mapper/internal/helm"
 	"github.com/chainguard-dev/customer-success/scripts/image-mapper/internal/mapper"
@@ -12,9 +13,11 @@ import (
 
 func MapHelmChartCommand() *cobra.Command {
 	opts := struct {
-		Repo         string
-		ChartRepo    string
-		ChartVersion string
+		Repo          string
+		ChartRepo     string
+		ChartVersion  string
+		Cache         bool
+		CacheDuration time.Duration
 	}{}
 	cmd := &cobra.Command{
 		Use:   "helm-chart",
@@ -42,7 +45,13 @@ func MapHelmChartCommand() *cobra.Command {
 				Repository: opts.ChartRepo,
 				Version:    opts.ChartVersion,
 			}
-			output, err := helm.MapChart(cmd.Context(), chart, mapper.WithRepository(opts.Repo))
+			output, err := helm.MapChart(
+				cmd.Context(),
+				chart,
+				mapper.WithRepository(opts.Repo),
+				mapper.WithCache(opts.Cache),
+				mapper.WithCacheDuration(opts.CacheDuration),
+			)
 			if err != nil {
 				return fmt.Errorf("mapping values: %w", err)
 			}
@@ -58,13 +67,17 @@ func MapHelmChartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Repo, "repository", "cgr.dev/chainguard", "Modifies the repository URI in the mappings. For instance, registry.internal.dev/chainguard would result in registry.internal.dev/chainguard/<image> in the output.")
 	cmd.Flags().StringVar(&opts.ChartRepo, "chart-repo", "", "The chart repository url to locate the requested chart.")
 	cmd.Flags().StringVar(&opts.ChartVersion, "chart-version", "", "A version constraint for the chart version.")
+	cmd.Flags().BoolVar(&opts.Cache, "cache", true, "Cache repository data to disk for use in subsequent invocations.")
+	cmd.Flags().DurationVar(&opts.CacheDuration, "cache-duration", 1*time.Hour, "Amount of time to cache data before fetching from the catalog again.")
 
 	return cmd
 }
 
 func MapHelmValuesCommand() *cobra.Command {
 	opts := struct {
-		Repo string
+		Repo          string
+		Cache         bool
+		CacheDuration time.Duration
 	}{}
 	cmd := &cobra.Command{
 		Use:   "helm-values",
@@ -99,7 +112,13 @@ func MapHelmValuesCommand() *cobra.Command {
 				}
 			}
 
-			output, err := helm.MapValues(cmd.Context(), input, mapper.WithRepository(opts.Repo))
+			output, err := helm.MapValues(
+				cmd.Context(),
+				input,
+				mapper.WithRepository(opts.Repo),
+				mapper.WithCache(opts.Cache),
+				mapper.WithCacheDuration(opts.CacheDuration),
+			)
 			if err != nil {
 				return fmt.Errorf("mapping values: %w", err)
 			}
@@ -113,6 +132,8 @@ func MapHelmValuesCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&opts.Repo, "repository", "cgr.dev/chainguard", "Modifies the repository URI in the mappings. For instance, registry.internal.dev/chainguard would result in registry.internal.dev/chainguard/<image> in the output.")
+	cmd.Flags().BoolVar(&opts.Cache, "cache", true, "Cache repository data to disk for use in subsequent invocations.")
+	cmd.Flags().DurationVar(&opts.CacheDuration, "cache-duration", 1*time.Hour, "Amount of time to cache data before fetching from the catalog again.")
 
 	return cmd
 }

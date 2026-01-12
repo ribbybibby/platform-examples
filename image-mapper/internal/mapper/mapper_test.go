@@ -1,14 +1,28 @@
 package mapper
 
 import (
+	"context"
 	"errors"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 )
+
+// mockRepoClient is a mock implementation of RepoClient for testing
+type mockRepoClient struct {
+	repos []Repo
+}
+
+func (m *mockRepoClient) ListRepos(ctx context.Context) (*RepoList, error) {
+	return &RepoList{
+		Repos:     m.repos,
+		FetchedAt: time.Now(),
+	}, nil
+}
 
 func TestMapperMap(t *testing.T) {
 	testCases := []struct {
@@ -92,9 +106,9 @@ func TestMapperMap(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			m := &mapper{
-				repos:     tc.repos,
-				repoName:  "cgr.dev/chainguard",
-				ignoreFns: []IgnoreFn{IgnoreTiers([]string{"fips"})},
+				repoClient: &mockRepoClient{repos: tc.repos},
+				repoName:   "cgr.dev/chainguard",
+				ignoreFns:  []IgnoreFn{IgnoreTiers([]string{"fips"})},
 			}
 
 			result, err := m.Map(tc.image)
@@ -116,7 +130,7 @@ func TestMapperMap(t *testing.T) {
 
 func TestMapperMapInvalidImage(t *testing.T) {
 	m := &mapper{
-		repos: []Repo{},
+		repoClient: &mockRepoClient{repos: []Repo{}},
 	}
 
 	_, err := m.Map("invalid::image")
@@ -140,8 +154,8 @@ func TestMapperMapAll(t *testing.T) {
 	}
 
 	m := &mapper{
-		repos:    repos,
-		repoName: "cgr.dev/chainguard",
+		repoClient: &mockRepoClient{repos: repos},
+		repoName:   "cgr.dev/chainguard",
 	}
 
 	images := []string{"nginx", "redis", "postgres"}
@@ -187,8 +201,8 @@ func TestMapperMapAllDuplicates(t *testing.T) {
 	}
 
 	m := &mapper{
-		repos:    repos,
-		repoName: "cgr.dev/chainguard",
+		repoClient: &mockRepoClient{repos: repos},
+		repoName:   "cgr.dev/chainguard",
 	}
 
 	// Include duplicates in the input
@@ -228,7 +242,7 @@ func TestMapperMapAllDuplicates(t *testing.T) {
 
 func TestMapperMapAllIteratorError(t *testing.T) {
 	m := &mapper{
-		repos: []Repo{},
+		repoClient: &mockRepoClient{repos: []Repo{}},
 	}
 	expectedErr := errors.New("iterator error")
 	iterator := &errorIterator{err: expectedErr}
@@ -241,7 +255,7 @@ func TestMapperMapAllIteratorError(t *testing.T) {
 
 func TestMapperMapAllMapError(t *testing.T) {
 	m := &mapper{
-		repos: []Repo{},
+		repoClient: &mockRepoClient{repos: []Repo{}},
 	}
 
 	// Use an invalid image that will cause Map to fail
@@ -495,9 +509,9 @@ func TestMapperMapWithCustomIgnoreFn(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			m := &mapper{
-				repos:     tc.repos,
-				repoName:  "cgr.dev/chainguard",
-				ignoreFns: tc.ignoreFns,
+				repoClient: &mockRepoClient{repos: tc.repos},
+				repoName:   "cgr.dev/chainguard",
+				ignoreFns:  tc.ignoreFns,
 			}
 
 			result, err := m.Map(tc.image)
@@ -546,9 +560,9 @@ func TestMapperMapWithCustomIgnoreFnUsingAliases(t *testing.T) {
 	}
 
 	m := &mapper{
-		repos:     repos,
-		repoName:  "cgr.dev/chainguard",
-		ignoreFns: []IgnoreFn{ignoreFn},
+		repoClient: &mockRepoClient{repos: repos},
+		repoName:   "cgr.dev/chainguard",
+		ignoreFns:  []IgnoreFn{ignoreFn},
 	}
 
 	// Should match cache-server but it should be ignored
@@ -602,9 +616,9 @@ func TestMapperMapWithNoIgnoreFns(t *testing.T) {
 	}
 
 	m := &mapper{
-		repos:     repos,
-		repoName:  "cgr.dev/chainguard",
-		ignoreFns: []IgnoreFn{}, // No ignore functions
+		repoClient: &mockRepoClient{repos: repos},
+		repoName:   "cgr.dev/chainguard",
+		ignoreFns:  []IgnoreFn{}, // No ignore functions
 	}
 
 	result, err := m.Map("nginx")
@@ -697,8 +711,8 @@ func TestMapImage(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			m := &mapper{
-				repos:    tc.repos,
-				repoName: "cgr.dev/chainguard",
+				repoClient: &mockRepoClient{repos: tc.repos},
+				repoName:   "cgr.dev/chainguard",
 			}
 
 			result, err := MapImage(m, tc.image)
@@ -723,7 +737,7 @@ func TestMapImage(t *testing.T) {
 
 func TestMapImageInvalidImage(t *testing.T) {
 	m := &mapper{
-		repos: []Repo{},
+		repoClient: &mockRepoClient{repos: []Repo{}},
 	}
 
 	_, err := MapImage(m, "invalid::image")
